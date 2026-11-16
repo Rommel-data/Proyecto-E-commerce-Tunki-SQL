@@ -27,6 +27,7 @@ E-commerce de artículos para el hogar · Lima y provincia · Enero 2024 – Feb
 3. [🔍 El análisis: preguntas del equipo comercial](#-3-el-análisis-preguntas-del-equipo-comercial)
 4. [💡 Conclusión y recomendación](#-4-conclusión-y-recomendación)
 5. [🚧 Alcance y limitaciones](#-5-alcance-y-limitaciones)
+
 ---
  
 ## 🎯 1. El problema y las hipótesis
@@ -199,6 +200,7 @@ erDiagram
 - Para comparar regiones, usar `shipping_region`: `city` tiene clientes "Sin dato".
 - Excluir febrero 2026 de las comparaciones mensuales.
 - Redondear solo el resultado final: `ROUND(SUM(...), 2)`, nunca antes de sumar.
+
 ---
  
 ## 🔍 3. El análisis: preguntas del equipo comercial
@@ -223,15 +225,13 @@ Cada consulta completa, con su encabezado (pregunta, KPI, lógica de los datos y
  
 **Convención de nombres:** `_aa` = mismo período del año anterior · `diferencia_` = cambio absoluto · `var_..._pct` = cambio relativo · `_pp` = diferencia entre porcentajes · `participacion_..._pct` = parte de un total · `efecto_` = parte de una diferencia, en S/.
  
-### P1 · ¿Cómo evolucionan las ventas, los pedidos y el ticket promedio cada mes?
- 
-*Gerente comercial · mide el fenómeno*
- 
-| | |
-|---|---|
+### P1 · Ventas, pedidos y ticket por mes
+
+| **Pregunta** | ¿Cómo evolucionan las ventas, los pedidos y el ticket promedio cada mes? · *Gerente comercial: mide el fenómeno antes de buscar causas* |
+|:---|:---|
 | **KPI** | `ventas` del mes · drivers: `pedidos` y `ticket_venta` (ventas = pedidos × ticket) |
-| **Lógica SQL** | Agregación condicional para poner un año por columna y comparar la forma de cada año |
- 
+| **Lógica SQL · apoyo del dato** | Agregación condicional: un año por columna para comparar la forma de cada año. El ticket se calcula ponderado (ventas ÷ pedidos), no como promedio de promedios |
+
 ```sql
 SELECT
     num_mes,
@@ -242,86 +242,90 @@ SELECT
 FROM ventas_mes
 GROUP BY num_mes;
 ```
- 
-![Resultado P1](Picture/pregunta_1.png)
- 
-**Hallazgo:** los dos años tienen la misma forma (pico en mayo, máximo en diciembre, mínimo en enero). 2025 vendió +19,2 % que 2024, con pedidos +17,1 % y ticket +1,8 %: **las ventas se mueven por pedidos, no por ticket.** Por eso cada mes se compara con el mismo mes del año anterior.
- 
-### P2 · ¿Cómo crece cada mes frente al mismo mes del año anterior?
- 
-*Gerente comercial · pone a prueba H1*
- 
-| | |
-|---|---|
+
+![Resultado P1](Picture/Pregunta_1.png)
+
+| **Impacto** | **Las ventas se mueven por pedidos, no por ticket**, y siguen una temporada fija |
+|:---|:---|
+| **Dato** | 2025 vendió +19,2 % que 2024: pedidos +17,1 % y ticket +1,8 %. Los dos años tienen la misma forma: pico en mayo, máximo en diciembre, mínimo en enero |
+| **Siguiente pregunta** | Si hay temporada, enero no se compara con diciembre sino con enero del año anterior → **P2** |
+
+### P2 · Crecimiento frente al mismo mes del año anterior
+
+| **Pregunta** | ¿Cómo crece cada mes frente al mismo mes del año anterior? · *Gerente comercial: pone a prueba H1* |
+|:---|:---|
 | **KPI** | `var_ventas_pct` → variación interanual de ventas |
-| **Lógica SQL** | `LAG` particionado por mes del año: compara enero con enero, no con diciembre. Descomposición de la diferencia en efecto pedidos + efecto ticket |
- 
+| **Lógica SQL · apoyo del dato** | `LAG` particionado por mes del año: compara enero con enero, no con diciembre. La diferencia se descompone en efecto pedidos + efecto ticket, con control de que sumen el total |
+
 ```sql
 LAG(ventas) OVER (PARTITION BY MONTH(fecha_mes) ORDER BY fecha_mes)   AS ventas_aa,
 -- PARTITION BY lo que debe ser igual (el mes) · ORDER BY lo que cambia (el año)
- 
+
 ROUND((pedidos - pedidos_aa) * ticket_venta_aa, 2)    AS efecto_pedidos,
 ROUND((ticket_venta - ticket_venta_aa) * pedidos, 2)  AS efecto_ticket
 -- Control: efecto_pedidos + efecto_ticket = diferencia_ventas
 ```
- 
-![Resultado P2](Picture/pregunta_2.png)
+
+![Resultado P2](Picture/Pregunta_2.png)
 ![Gráfico 2.1 · 12 meses creciendo y enero 2026 en rojo](Picture/grafica2_1.png)
- 
-**Hallazgo:** 12 meses entre +9,3 % y +25 %, y enero 2026 en **−9,4 % (−S/ 14.461)**. **H1 refutada:** la estacionalidad existe, pero enero contra enero también cae. Los pedidos restaron S/ 20.344 y el ticket sumó S/ 5.883: el problema es de volumen.
- 
-### P3 · ¿Subieron las cancelaciones o devoluciones en enero 2026?
- 
-*Gerente comercial · descarta una causa operativa*
- 
-| | |
-|---|---|
+
+| **Impacto** | **H1 refutada:** la temporada existe, pero enero 2026 cae incluso contra enero 2025. Es un problema de volumen |
+|:---|:---|
+| **Dato** | 12 meses entre +9,3 % y +25 %, y enero 2026 en **−9,4 % (−S/ 14.461)**. Los pedidos restaron S/ 20.344 y el ticket sumó S/ 5.883 |
+| **Siguiente pregunta** | Si faltan pedidos, ¿se perdieron en la operación (cancelaciones y devoluciones)? → **P3** |
+
+### P3 · Cancelaciones y devoluciones
+
+| **Pregunta** | ¿Subieron las cancelaciones o devoluciones en enero 2026? · *Gerente comercial: descarta una causa operativa* |
+|:---|:---|
 | **KPI** | `tasa_pedidos_perdidos_pct` → pedidos cancelados o devueltos ÷ pedidos totales |
-| **Lógica SQL** | Universo con **todos** los estados (la tasa necesita el total como denominador). `count_if` para contar con condición. La diferencia del valor perdido se descompone en volumen × tasa × ticket |
- 
+| **Lógica SQL · apoyo del dato** | Universo con **todos** los estados, porque la tasa necesita el total como denominador. `count_if` cuenta con condición. El valor perdido se descompone en volumen × tasa × ticket |
+
 ```sql
 count_if(order_status IN ('CANCELLED', 'RETURNED')) * 100.0 / COUNT(*)   AS tasa_pedidos_perdidos_pct,
- 
+
 -- valor perdido = pedidos totales × tasa × ticket del pedido perdido (nombres abreviados)
 (pedidos_totales - pedidos_totales_aa) * tasa_aa * ticket_perdido_aa      AS efecto_volumen,
 (tasa - tasa_aa) * pedidos_totales * ticket_perdido_aa                    AS efecto_tasa,
 (ticket_perdido - ticket_perdido_aa) * pedidos_perdidos                   AS efecto_ticket
 ```
- 
+
 ![Resultado P3 · tasa de pedidos perdidos](Picture/pregunta_3_1.png)
 ![Resultado P3 · enero contra enero, valorizado](Picture/pregunta_3_2.png)
- 
-**Hallazgo:** normalmente se pierde el 4,48 % de los pedidos (entre 3,19 % y 5,81 % por mes). En enero 2026 la tasa **bajó** de 5,39 % a 4,23 % (−1,16 pp). **Se descarta la causa operativa:** la caída nació antes, en la entrada de pedidos (−14,2 %). La tasa queda como alerta: si pasa de 5,81 %, hay que revisar la operación.
- 
-### P4 · ¿Cuánto vendió cada categoría en enero 2026 frente a enero 2025?
- 
-*Supervisores · pone a prueba H2*
- 
-| | |
-|---|---|
+
+| **Impacto** | **Se descarta la causa operativa:** la caída nació antes, en la entrada de pedidos |
+|:---|:---|
+| **Dato** | Normalmente se pierde el 4,48 % de los pedidos (entre 3,19 % y 5,81 % por mes). En enero 2026 la tasa **bajó** de 5,39 % a 4,23 % (−1,16 pp), mientras los pedidos que entraron cayeron −14,2 % |
+| **Siguiente pregunta** | Si entraron menos pedidos, ¿de qué se dejó de comprar? → **P4**. La tasa queda como alerta: si pasa de 5,81 %, hay que revisar la operación |
+
+### P4 · Ventas por categoría
+
+| **Pregunta** | ¿Cuánto vendió cada categoría en enero 2026 frente a enero 2025? · *Supervisores: ponen a prueba H2* |
+|:---|:---|
 | **KPI** | `var_ventas_pct` por categoría · referencia: la variación del total (−9,36 %) |
-| **Lógica SQL** | `LAG` por categoría **y** mes del año. `SUM() OVER ()` para la participación en la caída y para la referencia ponderada, en la misma fila |
- 
+| **Lógica SQL · apoyo del dato** | `LAG` por categoría **y** mes del año. `SUM() OVER ()` da, en la misma fila, la participación en la caída y la referencia ponderada |
+
 ```sql
 LAG(ventas) OVER (PARTITION BY categoria, MONTH(fecha_mes) ORDER BY fecha_mes)   AS ventas_aa,
- 
+
 (ventas - ventas_aa) * 100 / SUM(ventas - ventas_aa) OVER ()     AS participacion_caida_pct,
 (SUM(ventas) OVER () / SUM(ventas_aa) OVER () - 1) * 100         AS var_total_pct   -- ponderada
 ```
- 
-![Resultado P4](Picture/pregunta_4.png)
- 
-**Hallazgo:** menaje, decoración y muebles explican el **79,4 %** de la caída. Intensidad y magnitud no coinciden: muebles (−27,3 %) y cocina_electro (−26,6 %) caen casi 3 veces más que el total, pero menaje y decoración son las que más soles pierden porque son grandes. **H2 se sostiene por categoría.**
- 
-### P5 · ¿Qué productos perdieron más ventas entre enero 2025 y enero 2026?
- 
-*Supervisores · baja H2 al producto*
- 
-| | |
-|---|---|
+
+![Resultado P4](Picture/Pregunta_4.png)
+
+| **Impacto** | **H2 se sostiene por categoría:** tres categorías concentran casi toda la caída |
+|:---|:---|
+| **Dato** | Menaje, decoración y muebles explican el **79,4 %** de la caída. Intensidad y magnitud no coinciden: muebles (−27,3 %) y cocina_electro (−26,6 %) caen casi 3 veces más que el total, pero menaje y decoración pierden más soles porque son más grandes |
+| **Siguiente pregunta** | ¿La caída de esas categorías viene de unos pocos productos? → **P5** |
+
+### P5 · Productos que más ventas perdieron
+
+| **Pregunta** | ¿Qué productos perdieron más ventas entre enero 2025 y enero 2026? · *Supervisores: bajan H2 al producto* |
+|:---|:---|
 | **KPI** | `participacion_caida_bruta_acum_pct` → ¿cuántos productos explican el 80 % de la caída? |
-| **Lógica SQL** | Sin `LAG`: 51 productos vendieron en enero 2025 y nada en enero 2026, y `LAG` los perdería. `SUM(CASE)` + `COALESCE` los trae con 0. Denominador calculado **antes** del `WHERE`, y acumulado con `SUM() OVER (ORDER BY puesto)` |
- 
+| **Lógica SQL · apoyo del dato** | Sin `LAG`: 51 productos vendieron en enero 2025 y nada en enero 2026, y `LAG` los perdería. `SUM(CASE)` + `COALESCE` los trae con 0. La caída bruta (solo bajas) se calcula **antes** del `WHERE`, y el acumulado con `SUM() OVER (ORDER BY puesto)` |
+
 ```sql
 COALESCE(SUM(CASE WHEN YEAR(o.order_datetime) = 2025
                   THEN oi.quantity * oi.unit_price END), 0)          AS ventas_aa,
@@ -337,21 +341,22 @@ SELECT ...,
 FROM ranking
 WHERE diferencia_ventas < 0;
 ```
- 
-![Resultado P5](Picture/pregunta_5.png)
+
+![Resultado P5](Picture/Pregunta_5.png)
 ![Gráfico 5.1 · Pareto de la caída bruta: 55 de 132 productos para llegar al 80 %](Picture/grafico5_1.png)
- 
-**Hallazgo:** la caída neta de S/ 14.461 es un saldo: 132 productos cayeron (−S/ 40.189) y 147 subieron (+S/ 25.728). Hacen falta **55 de 132 productos** para explicar el 80 % de lo perdido, y el que más cae explica solo el 5,3 %. **H2 se cumple por categoría, pero no baja a producto:** la causa tiene que ser común a muchos productos.
- 
-### P6 · ¿En qué región y en qué rango de monto de pedido cayó enero 2026?
- 
-*Supervisores · pone a prueba H3*
- 
-| | |
-|---|---|
+
+| **Impacto** | **H2 no baja a producto:** la caída está repartida, así que la causa tiene que ser común a muchos productos |
+|:---|:---|
+| **Dato** | La caída neta de S/ 14.461 es un saldo: 132 productos cayeron (−S/ 40.189) y 147 subieron (+S/ 25.728). Hacen falta **55 de 132 productos** para explicar el 80 % de lo perdido, y el que más cae explica solo el 5,3 % |
+| **Siguiente pregunta** | Una causa común a muchos productos apunta al cliente o al canal, no al catálogo: ¿dónde cayó? → **P6** |
+
+### P6 · Región y rango de monto
+
+| **Pregunta** | ¿En qué región y en qué rango de monto de pedido cayó enero 2026? · *Supervisores: ponen a prueba H3* |
+|:---|:---|
 | **KPI** | `var_pedidos_pct` por región y rango de monto |
-| **Lógica SQL** | Grano pedido (`orders_clean`), sin unir `order_items`. `CASE` clasifica cada pedido antes de agregar. Participación **dentro** de la región con `PARTITION BY region`, porque Lima sube y provincia cae |
- 
+| **Lógica SQL · apoyo del dato** | Grano pedido (`orders_clean`), sin unir `order_items` para no inflar montos. `CASE` clasifica cada pedido antes de agregar, con el corte en S/ 79 (la política de envío conocida). Participación **dentro** de la región con `PARTITION BY region`, porque Lima sube y provincia cae |
+
 ```sql
 CASE WHEN o.merchandise_value < 79 THEN '1. Menos de S/ 79'      -- umbral de envío gratis de 2025
      ELSE                               '2. S/ 79 a más' END       AS rango_monto,
@@ -360,43 +365,49 @@ count_if(anio = 2026)                                    AS pedidos,
 count_if(anio = 2025)                                    AS pedidos_aa,
 SUM(ventas - ventas_aa) OVER (PARTITION BY region)       AS diferencia_region
 ```
- 
-![Resultado P6](Picture/pregunta_6.png)
- 
-**Hallazgo:** las regiones van en direcciones opuestas. **Provincia pierde el 56 % de sus pedidos** (441 → 194) y S/ 35.842; Lima gana 19,6 % y +S/ 21.381. La caída neta de S/ 14.461 escondía el tamaño del problema. En provincia, el tramo de S/ 79 a más explica el 91,6 % de la caída. **H3 confirmada, y más fuerte de lo planteado.**
- 
-### P7 · ¿Qué cambió en esa región entre 2025 y enero 2026?
- 
-*Gerente comercial · busca la causa*
- 
-| Paso | Pregunta | KPI | Lógica SQL |
-|---|---|---|---|
+
+![Resultado P6](Picture/Pregunta_6.png)
+
+| **Impacto** | **H3 confirmada, y más fuerte de lo planteado:** las regiones van en direcciones opuestas y la caída neta escondía el tamaño del problema |
+|:---|:---|
+| **Dato** | **Provincia pierde el 56 % de sus pedidos** (441 → 194) y S/ 35.842. Lima gana 19,6 % y +S/ 21.381. En provincia, el tramo de S/ 79 a más explica el 91,6 % de la caída |
+| **Siguiente pregunta** | Misma tienda y mismo mes, pero solo cae provincia, y sobre todo en los pedidos que tenían envío gratis: ¿qué cambió ahí? → **P7** |
+
+### P7 · Qué cambió en provincia
+
+**Pregunta:** ¿Qué cambió en esa región entre 2025 y enero 2026? · *Gerente comercial: busca la causa y su costo*
+
+| Paso | Pregunta | KPI | Lógica SQL · apoyo del dato |
+|:---|:---|:---|:---|
 | 7.1 | ¿Qué cambió? | Umbral y tarifa de envío | La política no está en ninguna tabla: se **deduce** con `MAX`/`MIN` condicionales |
 | 7.2 | ¿A quién afectó? | `var_pedidos_pct` por tramo | Tramos que salen de 7.1, aplicados igual a los dos años · Lima como grupo de control |
-| 7.3 | ¿Cuánto costó? | `diferencia_margen_contribucion` | Escalera de efectos: margen bruto, comisión y subsidio de envío |
- 
+| 7.3 | ¿Cuánto costó? | `diferencia_margen_contribucion` | Escalera de efectos: margen bruto, comisión y subsidio de envío · se compara margen contra subsidio, no ventas contra subsidio |
+
 ```sql
 -- 7.1 · El pedido más caro que pagó envío y el más barato que no pagó marcan el umbral
 MAX(envio_cobrado)                                            AS tarifa_envio,
 ROUND(MAX(CASE WHEN envio_cobrado > 0 THEN ventas END), 2)    AS monto_max_con_envio,
 ROUND(MIN(CASE WHEN envio_cobrado = 0 THEN ventas END), 2)    AS monto_min_envio_gratis
- 
+
 -- 7.3 · Se compara margen contra subsidio, no ventas contra subsidio
 o.shipping_cost_actual - o.shipping_fee_charged               AS subsidio_envio,
 ROUND(margen_bruto - margen_bruto_aa, 2)                      AS efecto_margen_bruto,
 ROUND(subsidio_envio_aa - subsidio_envio, 2)                  AS efecto_subsidio_envio
 ```
- 
+
 ![Resultado P7 · política de envío](Picture/pregunta_7_1.png)
 ![Resultado P7 · pedidos por tramo](Picture/pregunta_7_2.png)
 ![Gráfico 7.2 · el tramo que perdió el envío gratis cae −78 % en provincia](Picture/grafico7_2.png)
 ![Resultado P7 · margen de contribución](Picture/pregunta_7_3.png)
 ![Gráfico 7.3 · el flete ahorrado no compensa el margen bruto perdido](Picture/grafico7_3.png)
- 
-**Hallazgo:**
-- **Qué cambió:** en provincia, el envío gratis pasó de "desde S/ 79" a "desde ~S/ 150" y la tarifa subió de S/ 19,90 a S/ 29,90. En Lima no cambió nada.
-- **A quién afectó:** el tramo que perdió el envío gratis (S/ 79 a 149) cayó **−78,3 %**, más que su región (−56 %). En Lima, ese mismo tramo creció +16,9 %.
-- **Cuánto costó:** provincia ahorró S/ 6.838 de flete y perdió S/ 16.437 de margen bruto: **−S/ 8.284 de margen de contribución en un mes**, S/ 2,40 de margen perdido por cada sol ahorrado.
+
+| Paso | Dato | Impacto |
+|:---|:---|:---|
+| 7.1 · Qué cambió | En provincia, el envío gratis pasó de "desde S/ 79" a "desde ~S/ 150" y la tarifa subió de S/ 19,90 a S/ 29,90. En Lima no cambió nada | La caída coincide con una decisión propia de Tunki, tomada solo en la región que cae |
+| 7.2 · A quién afectó | El tramo que perdió el envío gratis (S/ 79 a 149) cayó **−78,3 %**, más que su región (−56 %). En Lima, ese mismo tramo creció +16,9 % | El cliente que perdió el envío gratis dejó de comprar. Lima descarta que el tramo haya caído en toda la tienda |
+| 7.3 · Cuánto costó | Provincia ahorró S/ 6.838 de flete y perdió S/ 16.437 de margen bruto | **−S/ 8.284 de margen de contribución en un mes:** S/ 2,40 de margen perdido por cada sol de flete ahorrado |
+| **Decisión** | El ahorro de flete no compensa el margen perdido | Revisar el umbral de provincia con un piloto → [recomendación en la sección 4](#-4-conclusión-y-recomendación) |
+
 ### Las trampas de la lógica, y cómo las resolví en SQL
  
 Lo que más aprendí en este proyecto no fue sintaxis: fueron consultas que corrían sin error y devolvían algo falso.
@@ -456,6 +467,7 @@ El objetivo del cambio de enero era legítimo: en provincia, el subsidio de env�
 - **Una parte de la caída de provincia no la explica la política.** El tramo de S/ 150 a más, que mantuvo el envío gratis, también cayó 46 %. Hay otra causa en la región que estos datos no muestran (competencia, tiempos de entrega, la tarifa nueva alejando al cliente en general).
 - **El margen de contribución no incluye costos fijos.** Mide lo que deja cada pedido después de producto, comisión y envío.
 - **Febrero 2026 queda fuera:** solo tiene 12 días.
+
 ---
  
 ## 📁 Qué hay en este repositorio
