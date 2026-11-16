@@ -6,8 +6,8 @@
 -- Salida  : orders_clean, customers_clean y las reglas para el análisis
 --
 -- 1. Detección     → controles 1 a 4, sobre las tablas crudas
--- 2. Limpieza      → tablas limpias; las crudas no se modifican
--- 3. Verificación  → prueba de que la limpieza funcionó (incluye el control 5)
+-- 2. Limpieza      → tablas limpias, las crudas no se modifican
+-- 3. Verificación  → prueba de que la limpieza funcionó, más el control 5 (monto confiable)
 -- 4. Reglas para el análisis
 -- =====================================================================
 
@@ -72,24 +72,28 @@ FROM products;
 -- Control 2 · Duplicados
 -- ---------------------------------------------------------------------
 -- a) ¿Cada llave aparece una sola vez?
-SELECT 'customers' AS tabla, 
-        COUNT(*) AS filas, 
-        COUNT(DISTINCT customer_id) AS llaves_unicas 
+SELECT 
+        'customers' AS tabla,
+        COUNT(*) AS filas,
+        COUNT(DISTINCT customer_id) AS llaves_unicas
 FROM customers
 UNION ALL
-SELECT 'orders',               
-        COUNT(*),          
-        COUNT(DISTINCT order_id)                       
+SELECT 
+        'orders',
+        COUNT(*),
+        COUNT(DISTINCT order_id)
 FROM orders
 UNION ALL
-SELECT 'order_items',          
-        COUNT(*),          
-        COUNT(DISTINCT order_item_id)                  
+SELECT 
+        'order_items',
+        COUNT(*),
+        COUNT(DISTINCT order_item_id)
 FROM order_items
 UNION ALL
-SELECT 'products',             
-        COUNT(*),          
-        COUNT(DISTINCT product_id)                     
+SELECT 
+        'products',
+        COUNT(*),
+        COUNT(DISTINCT product_id)
 FROM products;
 -- Resultado: solo orders tiene duplicados → 39.528 filas vs 39.331 pedidos (197 de más)
 
@@ -104,24 +108,29 @@ FROM (SELECT DISTINCT * FROM orders);
 -- ---------------------------------------------------------------------
 -- Control 3 · Texto inconsistente (columnas de texto que agrupan)
 -- ---------------------------------------------------------------------
-SELECT 'shipping_region' AS columna, 
-        COUNT(DISTINCT shipping_region) AS valores_distintos 
+SELECT 
+        'shipping_region' AS columna,
+        COUNT(DISTINCT shipping_region) AS valores_distintos
 FROM customers
 UNION ALL
-SELECT 'city',                           
-        COUNT(DISTINCT city)                                     
+SELECT 
+        'city',
+        COUNT(DISTINCT city)
 FROM customers
 UNION ALL
-SELECT 'acquisition_channel',            
-        COUNT(DISTINCT acquisition_channel)                      
+SELECT 
+        'acquisition_channel',
+        COUNT(DISTINCT acquisition_channel)
 FROM customers
 UNION ALL
-SELECT 'order_status',                   
-        COUNT(DISTINCT order_status)                             
+SELECT 
+        'order_status',
+        COUNT(DISTINCT order_status)
 FROM orders
 UNION ALL
-SELECT 'category',                       
-        COUNT(DISTINCT category)                                 
+SELECT 
+        'category',
+        COUNT(DISTINCT category)
 FROM products;
 -- Resultado: 10 · 15 · 3 · 3 · 7. Solo shipping_region sobra: debería tener 2.
 
@@ -180,7 +189,7 @@ SELECT
   COUNT(DISTINCT order_id)  AS pedidos_unicos
 FROM orders_clean;
 -- Resultado: 39.331 = 39.331
- 
+
 -- b) Texto inconsistente · dos regiones, sin perder clientes
 SELECT
   shipping_region,
@@ -188,14 +197,14 @@ SELECT
 FROM customers_clean
 GROUP BY shipping_region;
 -- Resultado: lima 12.699 + provincia 9.783 = 22.482, el mismo total original
- 
+
 -- c) Valores nulos · ninguna ciudad nula
 SELECT
   count_if(city IS NULL)        AS nulos_city,
   count_if(city = 'Sin dato')   AS sin_dato
 FROM customers_clean;
 -- Resultado: 0 nulos · 435 "Sin dato"
- 
+
 -- d) Duplicados · al quitarlos, la plata cuadra con el detalle
 SELECT
   (SELECT ROUND(SUM(merchandise_value), 2)     FROM orders)        AS monto_orders_crudo,
@@ -203,8 +212,8 @@ SELECT
   (SELECT ROUND(SUM(quantity * unit_price), 2) FROM order_items)   AS monto_lineas;
 -- Resultado: 6.057.474,50 · 6.027.715,59 · 6.027.715,59
 -- Los 29.758,91 de diferencia eran plata contada dos veces por los duplicados.
- 
--- e) Monto confiable · ¿el monto de cada pedido cuadra con la suma de sus líneas?
+
+-- e) Control 5 · Monto confiable: ¿el monto de cada pedido cuadra con la suma de sus líneas?
 WITH monto_por_pedido AS (
   SELECT
     order_id,
@@ -217,12 +226,12 @@ SELECT
 FROM orders_clean o
 JOIN monto_por_pedido mp ON mp.order_id = o.order_id;
 -- Resultado: 0 → merchandise_value es confiable, pedido por pedido
- 
- 
+
+
 -- =====================================================================
 -- 4. REGLAS PARA EL ANÁLISIS
 -- =====================================================================
--- • Usar orders_clean y customers_clean; order_items y products tal cual.
+-- • Usar orders_clean y customers_clean, order_items y products tal cual.
 -- • Para comparar regiones, usar shipping_region (city tiene "Sin dato").
 -- • Excluir febrero 2026 (12 días) de las comparaciones mensuales.
 -- • Redondear solo el resultado final: ROUND(SUM(...), 2), nunca antes de sumar.

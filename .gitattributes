@@ -1,0 +1,2 @@
+# GitHub cuenta el SQL como lenguaje del repo (por defecto lo trata como "data" y no lo muestra)
+*.sql linguist-language=SQL linguist-detectable=true

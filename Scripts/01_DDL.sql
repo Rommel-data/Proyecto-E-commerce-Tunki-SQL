@@ -1,3 +1,4 @@
+
 -- =====================================================================
 -- 01_DDL.sql · Proyecto SQL Tunki · Databricks SQL
 -- Estructura de las 4 tablas del catálogo bd_e_commerce_tunki.default
@@ -8,6 +9,8 @@
 --
 -- Para qué sirve este DDL: documenta el nombre y el tipo de cada columna,
 -- y permite recrear la estructura en otro motor.
+--
+-- Las tablas limpias (orders_clean, customers_clean) se crean en 02_limpieza.sql.
 --
 -- ⚠ No ejecutar sobre las tablas ya cargadas: CREATE OR REPLACE las
 --   reemplaza por tablas vacías y se pierden las filas.
@@ -64,24 +67,24 @@ CREATE OR REPLACE TABLE order_items (
 -- =====================================================================
 
 -- a) Mismas filas que el CSV
-SELECT 'customers'   AS tabla, 
-        COUNT(*) AS filas, 
-        22482 AS filas_csv 
+SELECT 'customers'   AS tabla,
+        COUNT(*)     AS filas,
+        22482        AS filas_csv
 FROM customers
 UNION ALL
-SELECT 'orders',               
-        COUNT(*),          
-        39528              
+SELECT 'orders',
+        COUNT(*),
+        39528
 FROM orders
 UNION ALL
-SELECT 'order_items',          
-        COUNT(*),          
-        74821              
+SELECT 'order_items',
+        COUNT(*),
+        74821
 FROM order_items
 UNION ALL
-SELECT 'products',             
-        COUNT(*),           
-        400                 
+SELECT 'products',
+        COUNT(*),
+        400
 FROM products;
 -- Resultado: las 4 tablas coinciden con su CSV
 
